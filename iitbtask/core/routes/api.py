@@ -11,7 +11,7 @@ from core.models import Role, User
 from core.schemas import DetailSchema, LogInSchema, RegisterInSchema, UserSchemaOut
 import logging
 from fastapi import APIRouter, HTTPException
-
+from core.routes.book import router as book_router
 logger = logging.getLogger(__name__)
 
 # User model
@@ -26,15 +26,8 @@ api = NinjaAPI(
 )
 
 # Public Router for routes accessible without authentication
-public_router = Router()
+public_router = Router() 
 
-# Authenticated Router for routes protected by Bearer Token
-protected_router = Router()
-
-
-### PUBLIC ROUTES ###
-
-# Register Route - Anyone can access
 @public_router.post("/register/", response={200: dict, 400: DetailSchema})
 def register(request, register_schema: RegisterInSchema):
     req = register_schema.dict()
@@ -109,19 +102,9 @@ class AuthBearer:
             return None
 
 
-# Protected Route - Requires valid Bearer token
-@protected_router.get("/profile/", response=UserSchemaOut)
-def get_profile(request):
-    user = request.user
-    return {
-        "username": user.username,
-        "email": user.email,
-        "role": user.role
-    }
-
-
-
 
 # Add Public and Protected Routers to the Main API
 api.add_router("/v1/auth", public_router)
-api.add_router("/v1/", protected_router, auth=AuthBearer())
+protected_router = Router(auth=[AuthBearer()])
+protected_router.add_router("",book_router)
+api.add_router("v1/", protected_router)
