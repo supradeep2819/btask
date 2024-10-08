@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: iitbtask
+    env: python
+    buildCommand: ./build.sh
+    startCommand: ./start.sh
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DEBUG
+        value: False
+      - key: DJANGO_SETTINGS_MODULE
+        value: iitbtask.settings
+    healthCheckPath: /
+    autoDeploy: true
