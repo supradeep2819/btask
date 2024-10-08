@@ -1,7 +1,7 @@
 from typing import Optional
 from ninja import ModelSchema, Schema
 
-from core.models import Book
+from core.models import Book, Lend
 
 
 def camel_to_snake(s):
@@ -43,3 +43,13 @@ class BookSchemaIn(Schema):
     author: str
     price: float
     status: str
+
+class LendSchema(ModelSchema):
+    class Config(CamelSchemaConfig):
+        model = Lend
+        model_fields = ["id","user","book","lend_at","returned_at"]
+    
+class UserSchemaOut(Schema):
+    username: str
+    email: str
+    role: str
