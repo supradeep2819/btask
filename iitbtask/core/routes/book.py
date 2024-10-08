@@ -1,11 +1,15 @@
+import json
+from django.utils import timezone
 from typing import List
 from ninja import Router
 from pydantic import Json
 
-from core.models import Book, Role, Status
-from core.schemas import BookSchema, BookSchemaIn, DetailSchema
+from core.models import Book, Lend, Role, Status
+from core.schemas import BookSchema, BookSchemaIn, DetailSchema, LendSchema
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 
+from core.routes.librarian import check_librarian_role
 
 router = Router()
 
@@ -13,8 +17,7 @@ router = Router()
 def add_book(request,payload:BookSchemaIn):
     data = payload.dict()
     try:
-        if request.user.role != Role.LIBRARIAN.value:
-            raise PermissionDenied("Only librarians can add books")
+        check_librarian_role(request)
         if data['price'] <0:
             raise ValueError("Price cannot be negative")
         if data['status'] not in   [Status.AVAILABLE.value, Status.BORROWED.value]:
@@ -48,8 +51,10 @@ def get_book_by_id(request, book_id):
 @router.delete('/books/{book_id}/', response={200: Json, 400: DetailSchema})
 def delete_book(request, book_id):
     try:
-        if request.user.role!= Role.LIBRARIAN.value:
-            raise PermissionDenied("Only librarians can delete books")
+        check_librarian_role(request)
+        lend = Lend.objects.filter(book=book,returned_at=None).first()
+        if lend:
+            raise Exception("Book is currently borrowed. You can't delete it until it's returned.")
         book = Book.objects.get(id=book_id)
         book.delete()
         return {"detail": "Book deleted successfully"}
@@ -58,12 +63,15 @@ def delete_book(request, book_id):
     except Exception as e:
         return 400, {"detail": str(e)}
     
-
 @router.put('/books/{book_id}/', response={200: BookSchema, 400: DetailSchema})
 def update_book(request, book_id, payload: BookSchemaIn):
     try:
-        if request.user.role != Role.LIBRARIAN.value:
-            raise PermissionDenied("Only librarians can update books")
+        
+        check_librarian_role(request)
+        
+        lend = Lend.objects.filter(book=book,returned_at=None).first()
+        if lend:
+            raise Exception("Book is currently borrowed. You can't update it until it's returned.")
 
         # Fetch the book
         book = Book.objects.get(id=book_id)
@@ -83,5 +91,45 @@ def update_book(request, book_id, payload: BookSchemaIn):
 
     except Book.DoesNotExist:
         return 400, {"detail": "Book not found"}
+    except Exception as e:
+        return 400, {"detail": str(e)}
+    
+
+@router.post('/books/{book_id}/lend/', response={200: LendSchema, 400: DetailSchema})
+def lend_book(request, book_id):
+    try:
+        # Fetch the book
+        book = Book.objects.get(id=book_id)
+        # Check if the book is available
+        if book.status == Status.BORROWED.value:
+            raise Exception("Book is already borrowed")
+        # Update the book status
+        book.status = Status.BORROWED.value
+        book.save()
+        # Create a new lend instance
+        lend = Lend.objects.create(book=book, user=request.user)
+        return lend
+    except Exception as e:
+        return 400, {"detail": str(e)}
+
+
+@router.post('/books/{book_id}/return/', response={200: Json, 400: DetailSchema})
+def return_book(request, book_id):
+    try:
+        with transaction.atomic():
+            # Fetch the book
+            book = Book.objects.get(id=book_id)
+            # Check if the book is borrowed
+            if book.status == Status.AVAILABLE.value:
+                raise Exception("Book is not borrowed")
+            # Update the book status
+            book.status = Status.AVAILABLE.value
+            book.save()
+            # Update the lend instance
+            lend = Lend.objects.filter(book=book,returned_at=None).first()
+            if lend:
+                lend.returned_at = timezone.now()
+                lend.save()
+            return json.dumps({"detail": "Book returned successfully"})
     except Exception as e:
         return 400, {"detail": str(e)}

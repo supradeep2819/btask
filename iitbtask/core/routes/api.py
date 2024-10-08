@@ -12,6 +12,8 @@ from core.schemas import DetailSchema, LogInSchema, RegisterInSchema, UserSchema
 import logging
 from fastapi import APIRouter, HTTPException
 from core.routes.book import router as book_router
+from core.routes.librarian import router as librarian_router
+from core.routes.user import router as user_router
 logger = logging.getLogger(__name__)
 
 # User model
@@ -67,6 +69,8 @@ def login(request, login_req: LogInSchema):  # Add the request parameter
     try:
         user = User.objects.filter(username=req["username"]).first()
         if user and user.check_password(req["password"]):
+            if not user.is_active:
+                raise Exception("User is inactive. Please contact the admin.")
             access_token = AccessToken.for_user(user)
             refresh_token = RefreshToken.for_user(user)
             response = {
@@ -91,11 +95,12 @@ class AuthBearer:
         token_type, token = auth_header.split()
         if token_type.lower() != 'bearer':
             return None
-        
         try:
             # Validate the token
             access_token = AccessToken(token)
             user = User.objects.get(id=access_token['user_id'])
+            if not user.is_active:
+                raise Exception("User is inactive and cannot access this route.")
             request.user = user  # Attach user to request
             return token
         except Exception:
@@ -107,4 +112,6 @@ class AuthBearer:
 api.add_router("/v1/auth", public_router)
 protected_router = Router(auth=[AuthBearer()])
 protected_router.add_router("",book_router)
+protected_router.add_router("",librarian_router)
+protected_router.add_router("",user_router)
 api.add_router("v1/", protected_router)
